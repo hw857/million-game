@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>💰 100만원 모으기</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,sans-serif;background:linear-gradient(135deg,#101827,#17243a);color:#fff;min-height:100vh}
+button{font:inherit}.wrap{max-width:720px;margin:auto;padding:20px}.title{text-align:center;font-size:32px;font-weight:900;margin:18px 0 8px}.sub{text-align:center;color:#b9c5d8;margin-bottom:24px}
+.card{background:#1d2a40;border:1px solid #34435e;border-radius:20px;padding:20px;margin:14px 0;box-shadow:0 10px 30px #0004}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.btn{border:0;border-radius:14px;padding:13px 16px;background:#2d73ff;color:#fff;font-weight:800;cursor:pointer;min-height:50px}.btn:hover{filter:brightness(1.1)}.btn:disabled{opacity:.4;cursor:not-allowed}.ghost{background:#26354d}.danger{background:#9b3545}.money{text-align:center;font-size:24px;font-weight:900;margin:15px}.big{text-align:center;font-size:78px;margin:5px}.bar{height:36px;background:#0e1522;border-radius:20px;position:relative;overflow:hidden;margin:18px 0;border:1px solid #40506a}.zone{position:absolute;top:0;height:100%;background:#45d483}.needle{position:absolute;top:0;height:100%;width:4px;background:#fff}.nav{display:flex;gap:8px;margin-bottom:10px}.nav .btn{flex:1;padding:10px;font-size:14px}.center{text-align:center}.small{color:#aebbd0;font-size:13px}.ores{display:grid;grid-template-columns:repeat(2,1fr);gap:9px}.ore{padding:10px;border:1px solid #34435e;border-radius:12px}.row{display:flex;justify-content:space-between;align-items:center;gap:10px;border-bottom:1px solid #34435e;padding:12px 0}.row:last-child{border:0}.win{background:linear-gradient(135deg,#173d2d,#215b42);border:2px solid #45d483}.choice{font-size:18px;min-height:120px}.locked{background:#26354d}.tag{display:inline-block;background:#30415f;border-radius:8px;padding:4px 8px;font-size:12px;color:#c9d5e7}
+@media(max-width:560px){.grid{grid-template-columns:1fr}.ores{grid-template-columns:1fr}.wrap{padding:12px}.title{font-size:28px}}
+</style>
+</head>
+<body>
+<div class="wrap" id="app"></div>
+<script>
+const app=document.getElementById('app');
+let money=0,pick=0,inv={},ore=null,hits=0,misses=0,need=3,zone=20,needle=0,dir=1,running=false,cooldown=false,gameMode=null,won=false;
+
+const ores=[
+ ['돌','🪨',48,100,'일반'],
+ ['철','⚙️',28,500,'일반'],
+ ['금','🥇',14,2500,'희귀'],
+ ['유황','🟡',6,6000,'희귀'],
+ ['에메랄드','💚',2.5,20000,'매우 희귀'],
+ ['다이아','💎',1.4,70000,'전설'],
+ ['핑크다이아','💗',0.1,300000,'초희귀']
+];
+
+const moneyFmt=n=>n.toLocaleString('ko-KR');
+
+function home(){
+ running=false; cooldown=false;
+ app.innerHTML=`
+ <div class="title">💰 100만원 모으기</div>
+ <div class="sub">처음에 딱 하나를 골라서 그 게임으로 100만원을 모으세요.</div>
+ <div class="card">
+  <h2>🎮 게임 선택</h2>
+  <div class="grid">
+   <button class="btn choice" onclick="choose('mine')">⛏️<br>광질<br><span class="small">광물을 캐서 판매</span></button>
+   <button class="btn choice locked" onclick="choose('farm')">🌾<br>농사<br><span class="small">별도 게임 · 준비 중</span></button>
+   <button class="btn choice locked" onclick="choose('cook')">🍳<br>요리<br><span class="small">별도 게임 · 준비 중</span></button>
+  </div>
+ </div>
+ <div class="card small">목표: 선택한 게임에서 💰 <b style="color:#fff">1,000,000원</b> 달성</div>`;
+}
+
+function choose(mode){
+ if(mode!=='mine'){
+  alert('🌾 농사와 🍳 요리는 다음 버전에 추가됩니다. 현재는 ⛏️ 광질을 플레이할 수 있어요!');
+  return;
+ }
+ gameMode=mode; money=0;pick=0;inv={};won=false;mine();
+}
+
+function nav(){
+ return `<div class="nav">
+  <button class="btn ghost" onclick="mine()">⛏️ 광질</button>
+  <button class="btn ghost" onclick="shop()">🏪 판매/강화</button>
+  <button class="btn ghost" onclick="home()">↩️ 게임 선택</button>
+ </div>`;
+}
+
+function weightedOre(){
+ let p=ores.map(x=>x.slice());
+ if(pick>=4){
+  p[0][2]=38;p[1][2]=28;p[2][2]=17;p[3][2]=8;p[4][2]=5;p[5][2]=3.5;p[6][2]=0.5;
+ }
+ const total=p.reduce((a,x)=>a+x[2],0);
+ let r=Math.random()*total;
+ for(const x of p){r-=x[2];if(r<0)return x}
+ return p[0];
+}
+
+function mine(){
+ if(won){winScreen();return}
+ running=false;cooldown=false;
+ app.innerHTML=`${nav()}
+ <div class="title">⛏️ 광질</div>
+ <div class="money">💰 ${moneyFmt(money)}원 / 1,000,000원</div>
+ <div class="card center">
+  <div id="rock" class="big">🪨</div>
+  <div id="msg">바위를 캐면 어떤 광물이 나올지 랜덤입니다.</div>
+  <div id="count" class="small">성공 0회 · 빗나감 0/2</div>
+  <div class="bar"><div id="zone" class="zone"></div><div id="needle" class="needle"></div></div>
+  <button id="hit" class="btn" style="width:100%" onclick="handleHit()">⛏️ 바위 캐기</button>
+  <div class="small" style="margin-top:9px">초록색 구간에서 눌러야 성공 · 2번 빗나가면 바위를 놓치고 2초 후 다음 바위</div>
+ </div>
+ <div class="card"><h3>🔨 현재 곡괭이: ${pick}단계</h3><div class="small">${levelInfo()}</div></div>
+ <div class="card"><h3>📊 광물 확률</h3><div class="ores">${displayOres()}</div></div>`;
+}
+
+function displayOres(){
+ let p=ores;
+ if(pick>=4)p=ores.map((o,i)=>{let q=[38,28,17,8,5,3.5,.5];return [o[0],o[1],q[i],o[3],o[4]]});
+ return p.map(o=>`<div class="ore">${o[1]} <b>${o[0]}</b><br><span class="small">${o[2]}% · ${moneyFmt(o[3])}원</span></div>`).join('');
+}
+
+function levelInfo(){
+ return [
+  '기본: 성공 3회 · 구간 20% · 1개',
+  '1단계: 성공 2회 · 구간 27% · 1개',
+  '2단계: 성공 1회 · 구간 35% · 1개',
+  '3단계: 성공 1회 · 구간 40% · 기본 2개 · 10% 확률로 3개',
+  '4단계: 성공 1회 · 구간 50% · 3~4개 · 희귀 광물 확률 증가'
+ ][pick];
+}
+
+function startMining(){
+ ore=weightedOre();hits=0;misses=0;
+ need=pick===0?3:pick===1?2:1;
+ zone=pick===0?20:pick===1?27:pick===2?35:pick===3?40:50;
+ running=true;cooldown=false;
+ document.getElementById('rock').textContent=ore[1];
+ document.getElementById('msg').textContent=`${ore[0]} 채굴 중 · 성공 0/${need}`;
+ document.getElementById('count').textContent='성공 0회 · 빗나감 0/2';
+ document.getElementById('hit').textContent='🎯 타이밍 맞추기';
+ document.getElementById('hit').disabled=false;
+ setTarget();
+}
+
+function setTarget(){
+ const z=document.getElementById('zone');
+ const n=document.getElementById('needle');
+ if(!z||!n)return;
+ const target=5+Math.random()*(90-zone);
+ z.style.left=target+'%';z.style.width=zone+'%';
+ needle=Math.random()*100;dir=1;n.style.left=needle+'%';
+}
+
+function handleHit(){
+ if(!running&&!cooldown)startMining();
+ else if(running)strike();
+}
+
+function strike(){
+ if(!running)return;
+ const z=document.getElementById('zone');
+ const left=parseFloat(z.style.left), width=parseFloat(z.style.width);
+ const good=needle>=left&&needle<=left+width;
+ if(!good){
+  misses++;
+  document.getElementById('count').textContent=`성공 ${hits}/${need} · 빗나감 ${misses}/2`;
+  if(misses>=2){failMine();return}
+  document.getElementById('msg').textContent='❌ 빗나갔어요! 한 번 더 실패하면 바위를 놓칩니다.';
+  return;
+ }
+ hits++;
+ document.getElementById('count').textContent=`성공 ${hits}/${need} · 빗나감 ${misses}/2`;
+ if(hits>=need){
+  running=false;
+  let amount=1;
+  if(pick===3)amount=Math.random()<.1?3:2;
+  if(pick>=4)amount=3+Math.floor(Math.random()*2);
+  inv[ore[0]]=(inv[ore[0]]||0)+amount;
+  document.getElementById('rock').textContent='✨';
+  document.getElementById('msg').textContent=`🎉 ${ore[1]} ${ore[0]} × ${amount} 획득!`;
+  document.getElementById('hit').textContent='⛏️ 다음 바위 캐기';
+ }else{
+  document.getElementById('msg').textContent=`✅ 성공! ${hits}/${need}`;
+  setTarget();
+ }
+}
+
+function failMine(){
+ running=false;cooldown=true;
+ document.getElementById('rock').textContent='💥';
+ document.getElementById('msg').textContent='💨 두 번 빗나가서 바위를 놓쳤습니다!';
+ document.getElementById('hit').disabled=true;
+ document.getElementById('hit').textContent='⏳ 2초 대기 중...';
+ let left=2;
+ const t=setInterval(()=>{
+  left--;
+  if(left>0)document.getElementById('count').textContent=`다음 바위까지 ${left}초`;
+  else{clearInterval(t);cooldown=false;startMining();}
+ },1000);
+}
+
+function shop(){
+ running=false;cooldown=false;
+ app.innerHTML=`${nav()}
+ <div class="title">🏪 판매 & 강화</div>
+ <div class="money">💰 ${moneyFmt(money)}원 / 1,000,000원</div>
+ <div class="card"><h3>🎒 광물 판매</h3>${ores.map(o=>{
+  const n=inv[o[0]]||0;
+  return `<div class="row"><span>${o[1]} <b>${o[0]}</b> × ${n}<br><span class="small">개당 ${moneyFmt(o[3])}원 · 총 ${moneyFmt(n*o[3])}원</span></span><button class="btn" style="width:auto" onclick="sell('${o[0]}')" ${n?'':'disabled'}>판매</button></div>`
+ }).join('')}</div>
+ <div class="card"><h3>🔨 곡괭이 강화</h3>${upgradeHTML()}</div>`;
+}
+
+function upgradeHTML(){
+ const data=[
+  ['1단계',5000,'성공 3→2회 · 구간 20→27%'],
+  ['2단계',25000,'성공 2→1회 · 구간 27→35%'],
+  ['3단계',70000,'구간 40% · 기본 2개 · 10% 확률 3개'],
+  ['4단계',250000,'구간 50% · 3~4개 · 희귀 확률 증가']
+ ];
+ if(pick>=4)return `<span class="tag">⭐ MAX</span><p>4단계: 구간 50%, 광물 3~4개, 희귀 광물 확률 증가</p>`;
+ const d=data[pick];
+ return `<div class="row"><span><b>${d[0]}</b> · ${moneyFmt(d[1])}원<br><span class="small">${d[2]}</span></span><button class="btn" style="width:auto" onclick="upgrade()" ${money>=d[1]?'':'disabled'}>강화</button></div>`;
+}
+
+function sell(name){
+ const o=ores.find(x=>x[0]===name),n=inv[name]||0;if(!n)return;
+ money+=o[3]*n;inv[name]=0;
+ if(money>=1000000){money=1000000;won=true;winScreen();return}
+ shop();
+}
+
+function upgrade(){
+ const costs=[5000,25000,70000,250000],c=costs[pick];
+ if(pick>=4||money<c)return;
+ money-=c;pick++;shop();
+}
+
+function winScreen(){
+ running=false;cooldown=false;
+ app.innerHTML=`<div class="title">🎉 목표 달성!</div>
+ <div class="card win center">
+  <div style="font-size:72px">💰</div>
+  <h2>100만원 달성!</h2>
+  <p>⛏️ 광질로 목표 금액을 모았습니다.</p>
+  <div class="money">💰 ${moneyFmt(money)}원</div>
+  <button class="btn" onclick="home()">처음으로 돌아가기</button>
+ </div>`;
+}
+
+function animate(){
+ if(running){
+  needle+=dir*1.7;
+  if(needle>=99){needle=99;dir=-1}
+  if(needle<=1){needle=1;dir=1}
+  const n=document.getElementById('needle');if(n)n.style.left=needle+'%';
+ }
+ requestAnimationFrame(animate);
+}
+home();requestAnimationFrame(animate);
+</script>
+</body>
+</html>
